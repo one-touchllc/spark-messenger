@@ -251,6 +251,21 @@ input,textarea,button,select{font-family:inherit;}
 
 /* FAB send btn */
 .send-btn{background:linear-gradient(135deg,var(--mid-green),var(--green));}
+
+/* File bubble */
+.file-bubble{display:flex;align-items:center;gap:10px;background:var(--header-bg);border-radius:10px;padding:10px 12px;min-width:180px;max-width:280px;border:1px solid var(--border);text-decoration:none;}
+.file-icon{width:38px;height:38px;border-radius:8px;background:var(--green);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.file-icon svg{width:20px;height:20px;fill:#fff;}
+.file-info{flex:1;min-width:0;}
+.file-nm{font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.file-sz{font-size:11px;color:var(--subtext);}
+
+/* Upload indicator */
+#upload-indicator{position:fixed;bottom:76px;left:50%;transform:translateX(-50%);background:var(--card-bg);border-radius:12px;padding:10px 18px;box-shadow:0 4px 20px var(--shadow);z-index:1000;display:none;flex-direction:column;gap:6px;min-width:240px;border:1px solid var(--border);}
+#upload-indicator.visible{display:flex;}
+#upload-indicator span{font-size:13px;color:var(--text);}
+.prog-wrap{width:100%;height:5px;background:var(--border);border-radius:3px;overflow:hidden;}
+.prog-fill{height:100%;background:var(--green);border-radius:3px;width:0%;transition:width .15s;}
 </style>
 </head>
 <body>
@@ -359,7 +374,7 @@ input,textarea,button,select{font-family:inherit;}
           <button class="attach-btn" onclick="document.getElementById('file-input').click()" title="Attach">
             <svg viewBox="0 0 24 24"><path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/></svg>
           </button>
-          <input type="file" id="file-input" style="display:none" accept="image/*,video/*,audio/*" onchange="handleFileSelect(event)"/>
+          <input type="file" id="file-input" style="display:none" accept="*/*" onchange="handleFileSelect(event)"/>
           <textarea id="msg-input" placeholder="Type a message" rows="1" onkeydown="msgKeyDown(event)" oninput="onTyping();autoResize(this)"></textarea>
         </div>
         <button class="send-btn" onclick="sendMessage()">
@@ -477,6 +492,12 @@ input,textarea,button,select{font-family:inherit;}
   <button onclick="document.getElementById('img-preview-overlay').classList.remove('visible')">
     <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
   </button>
+</div>
+
+<!-- UPLOAD INDICATOR -->
+<div id="upload-indicator">
+  <span id="upload-label">Uploading...</span>
+  <div class="prog-wrap"><div class="prog-fill" id="prog-fill"></div></div>
 </div>
 
 <!-- MODALS -->
@@ -691,6 +712,8 @@ function initApp(){
   socket.on('call_ended',()=>cleanupCall());
   socket.on('ice_candidate',async({candidate})=>{try{if(pc&&candidate)await pc.addIceCandidate(new RTCIceCandidate(candidate));}catch(e){}});
   socket.on('new_status',()=>{if(sidebarTab==='status')loadStatuses();});
+  // Push notifications
+  setupPushNotifications();
 }
 
 function setMyAvatar(el,user){
@@ -868,6 +891,22 @@ function updateChatStatus(){
 // ══════════════════════════════════════
 // MESSAGES
 // ══════════════════════════════════════
+function fmtFileSize(bytes){
+  if(!bytes)return'';
+  if(bytes<1024)return bytes+'B';
+  if(bytes<1048576)return(bytes/1024).toFixed(1)+'KB';
+  return(bytes/1048576).toFixed(1)+'MB';
+}
+function getFileIcon(mime){
+  if(!mime)return'<path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11z"/>';
+  if(mime.startsWith('image/'))return'<path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>';
+  if(mime.startsWith('video/'))return'<path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/>';
+  if(mime.startsWith('audio/'))return'<path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>';
+  if(mime.includes('pdf'))return'<path d="M20 2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-8.5 7.5c0 .83-.67 1.5-1.5 1.5H9v2H7.5V7H10c.83 0 1.5.67 1.5 1.5v1zm5 2c0 .83-.67 1.5-1.5 1.5h-2.5V7H15c.83 0 1.5.67 1.5 1.5v3zm4-3H19v1h1.5V11H19v2h-1.5V7h3v1.5zM9 9.5h1v-1H9v1zM4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm10 5.5h1v-3h-1v3z"/>';
+  if(mime.includes('zip')||mime.includes('rar')||mime.includes('7z'))return'<path d="M20 6h-2.18c.07-.31.18-.61.18-.93C18 3.38 16.62 2 14.93 2c-.96 0-1.86.48-2.43 1.28L12 4l-.5-.72C10.93 2.48 10.04 2 9.07 2 7.38 2 6 3.38 6 5.07c0 .32.11.62.18.93H4c-1.11 0-2 .89-2 2v11c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-5-2.5c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zM9.07 3.5c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1z"/>';
+  return'<path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11z"/>';
+}
+
 function renderMessages(){
   const c=document.getElementById('messages-container');
   if(!messages.length){c.innerHTML='<div class="no-messages">No messages yet. Say hello!</div>';return;}
@@ -878,11 +917,29 @@ function renderMessages(){
     const isMe=m.fromUserId===myUser.id;
     const time=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
     let content='';
-    if(m.deleted){content=`<span class="bubble-text" style="opacity:.6;font-style:italic">This message was deleted</span>`;}
-    else if(m.type==='image'&&m.mediaData){content=`<img class="bubble-media" src="${m.mediaData}" onclick="previewImg('${m.mediaData}')" style="max-width:240px;max-height:200px"/>`+(m.content?`<span class="bubble-text">${esc(m.content)}</span>`:'');}
-    else if(m.type==='video'&&m.mediaData){content=`<video class="bubble-media" src="${m.mediaData}" controls style="max-width:240px"></video>`;}
-    else if(m.type==='audio'&&m.mediaData){content=`<audio class="bubble-audio bubble-media" src="${m.mediaData}" controls></audio>`;}
-    else{content=`<span class="bubble-text">${esc(m.content)}</span>`;}
+    if(m.deleted){
+      content=`<span class="bubble-text" style="opacity:.6;font-style:italic">This message was deleted</span>`;
+    }else if(m.type==='image'&&(m.fileUrl||m.mediaData)){
+      const src=m.fileUrl||m.mediaData;
+      content=`<img class="bubble-media" src="${src}" onclick="previewImg('${src}')" style="max-width:240px;max-height:200px;cursor:pointer"/>`;
+    }else if(m.type==='video'&&(m.fileUrl||m.mediaData)){
+      const src=m.fileUrl||m.mediaData;
+      content=`<video class="bubble-media" src="${src}" controls style="max-width:260px;border-radius:8px"></video>`;
+    }else if(m.type==='audio'&&(m.fileUrl||m.mediaData)){
+      const src=m.fileUrl||m.mediaData;
+      content=`<audio class="bubble-audio bubble-media" src="${src}" controls style="width:240px"></audio>`;
+    }else if(m.fileUrl){
+      const iconPath=getFileIcon(m.fileMime);
+      content=`<a class="file-bubble" href="${m.fileUrl}" download="${m.fileName||'file'}" target="_blank">
+        <div class="file-icon"><svg viewBox="0 0 24 24">${iconPath}</svg></div>
+        <div class="file-info">
+          <div class="file-nm">${esc(m.fileName||'File')}</div>
+          <div class="file-sz">${fmtFileSize(m.fileSize)}</div>
+        </div>
+      </a>`;
+    }else{
+      content=`<span class="bubble-text">${esc(m.content)}</span>`;
+    }
     const sender=activeGroup&&!isMe?`<div class="bubble-sender">${m.fromUsername||''}</div>`:'';
     const tick=isMe?`<span class="tick${m.read?' read':''}">&#10003;&#10003;</span>`:'';
     const del=isMe&&!m.deleted?`<button class="del-btn" onclick="deleteMessage('${m.id}')" title="Delete"><svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>`:'';
@@ -935,15 +992,51 @@ function sendMessage(){
 
 function handleFileSelect(e){
   const file=e.target.files[0];if(!file)return;
-  const type=file.type.startsWith('image/')?'image':file.type.startsWith('video/')?'video':'audio';
-  const reader=new FileReader();
-  reader.onload=ev=>{
-    const data=ev.target.result;
-    if(activeContact)socket.emit('send_message',{toUserId:activeContact.id,content:'',type,mediaData:data,mediaName:file.name});
-    else if(activeGroup)socket.emit('send_group_message',{groupId:activeGroup.id,content:'',type,mediaData:data,mediaName:file.name});
-  };
-  reader.readAsDataURL(file);
   e.target.value='';
+  uploadAndSend(file);
+}
+
+async function uploadAndSend(file){
+  const maxSize=100*1024*1024;
+  if(file.size>maxSize){alert('File too large! Max 100MB.');return;}
+  // Show upload indicator
+  const ind=document.getElementById('upload-indicator');
+  const lbl=document.getElementById('upload-label');
+  const fill=document.getElementById('prog-fill');
+  lbl.textContent=`Uploading: ${file.name}`;
+  fill.style.width='0%';
+  ind.classList.add('visible');
+  try{
+    const formData=new FormData();
+    formData.append('file',file);
+    const xhr=new XMLHttpRequest();
+    xhr.open('POST','/api/upload');
+    xhr.setRequestHeader('Authorization',`Bearer ${myToken}`);
+    xhr.upload.onprogress=ev=>{
+      if(ev.lengthComputable){fill.style.width=(ev.loaded/ev.total*100)+'%';}
+    };
+    const result=await new Promise((resolve,reject)=>{
+      xhr.onload=()=>{
+        if(xhr.status===200)resolve(JSON.parse(xhr.responseText));
+        else reject(new Error('Upload failed'));
+      };
+      xhr.onerror=()=>reject(new Error('Upload failed'));
+      xhr.send(formData);
+    });
+    ind.classList.remove('visible');
+    // Determine type
+    const mime=file.type||'application/octet-stream';
+    let type='file';
+    if(mime.startsWith('image/'))type='image';
+    else if(mime.startsWith('video/'))type='video';
+    else if(mime.startsWith('audio/'))type='audio';
+    const payload={fileUrl:result.fileUrl,fileName:result.fileName,fileSize:result.fileSize,fileMime:result.fileMime,content:'',type};
+    if(activeContact)socket.emit('send_message',{toUserId:activeContact.id,...payload});
+    else if(activeGroup)socket.emit('send_group_message',{groupId:activeGroup.id,...payload});
+  }catch(err){
+    ind.classList.remove('visible');
+    alert('Upload failed: '+err.message);
+  }
 }
 
 function deleteMessage(id){
@@ -1380,6 +1473,36 @@ function openSearchInChat(){
   if(!q)return;
   const found=messages.filter(m=>m.content?.toLowerCase().includes(q.toLowerCase()));
   alert(found.length?`Found ${found.length} message(s) containing "${q}"`:'"No messages found"');
+}
+
+// ══════════════════════════════════════
+// PUSH NOTIFICATIONS
+// ══════════════════════════════════════
+async function setupPushNotifications(){
+  if(!('serviceWorker' in navigator)||!('PushManager' in window))return;
+  try{
+    const reg=await navigator.serviceWorker.register('/sw.js');
+    const perm=await Notification.requestPermission();
+    if(perm!=='granted')return;
+    const existing=await reg.pushManager.getSubscription();
+    if(existing){await savePushSub(existing);return;}
+    const r=await fetch('/api/vapid-public-key');
+    const {key}=await r.json();
+    if(!key)return;
+    const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlBase64ToUint8Array(key)});
+    await savePushSub(sub);
+  }catch(e){console.log('Push setup:',e.message);}
+}
+async function savePushSub(sub){
+  await fetch('/api/push-subscribe',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${myToken}`},body:JSON.stringify({subscription:sub})});
+}
+function urlBase64ToUint8Array(base64String){
+  const padding='='.repeat((4-base64String.length%4)%4);
+  const base64=(base64String+padding).replace(/-/g,'+').replace(/_/g,'/');
+  const rawData=window.atob(base64);
+  const outputArray=new Uint8Array(rawData.length);
+  for(let i=0;i<rawData.length;++i)outputArray[i]=rawData.charCodeAt(i);
+  return outputArray;
 }
 
 // ══════════════════════════════════════
