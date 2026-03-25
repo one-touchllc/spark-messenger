@@ -1,7 +1,7 @@
 {
   "name": "spark-messenger",
-  "version": "3.0.0",
-  "description": "Spark Messenger - Real-time Chat App with Database",
+  "version": "4.0.0",
+  "description": "Spark Messenger - Full Featured Chat App",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
