@@ -480,25 +480,59 @@ io.on("connection", (socket) => {
     socket.emit("message_deleted", { messageId });
   });
 
-  // WebRTC Calls
+  // WebRTC Calls — ICE candidate buffering for mobile
+  const iceCandidateBuffer = new Map(); // callId -> [candidates]
+
   socket.on("call_user", ({ toUserId, offer, callId, callType }) => {
     const caller = db.prepare("SELECT * FROM users WHERE id = ?").get(socket.userId);
     const cId = callId || uuidv4();
     activeCalls.set(cId, { id: cId, callerId: socket.userId, calleeId: toUserId, status: "ringing", type: callType || "voice" });
-    io.to(`user_${toUserId}`).emit("incoming_call", { callId: cId, fromUserId: socket.userId, fromUsername: caller?.display_name, fromAvatarColor: caller?.avatar_color, fromAvatarImg: caller?.avatar_img, offer, callType: callType || "voice" });
+    iceCandidateBuffer.set(cId, []);
+    io.to(`user_${toUserId}`).emit("incoming_call", {
+      callId: cId, fromUserId: socket.userId,
+      fromUsername: caller?.display_name, fromAvatarColor: caller?.avatar_color, fromAvatarImg: caller?.avatar_img,
+      offer, callType: callType || "voice"
+    });
     socket.emit("call_initiated", { callId: cId });
-    // Push for call
     if (!userSockets.has(toUserId)) {
-      sendPushNotif(toUserId, caller?.display_name || "Incoming Call", callType === "video" ? "Incoming video call" : "Incoming voice call", { isCall: true });
+      sendPushNotif(toUserId, caller?.display_name || "Incoming Call",
+        callType === "video" ? "📹 Incoming video call" : "📞 Incoming voice call", { isCall: true });
     }
   });
+
   socket.on("answer_call", ({ callId, toUserId, answer }) => {
-    const call = activeCalls.get(callId); if (call) call.status = "active";
+    const call = activeCalls.get(callId);
+    if (call) call.status = "active";
     io.to(`user_${toUserId}`).emit("call_answered", { callId, answer });
+    // Flush buffered ICE candidates
+    const buffered = iceCandidateBuffer.get(callId) || [];
+    buffered.forEach(c => io.to(`user_${toUserId}`).emit("ice_candidate", c));
+    iceCandidateBuffer.delete(callId);
   });
-  socket.on("reject_call", ({ callId, toUserId }) => { activeCalls.delete(callId); io.to(`user_${toUserId}`).emit("call_rejected", { callId }); });
-  socket.on("end_call", ({ callId, toUserId }) => { activeCalls.delete(callId); io.to(`user_${toUserId}`).emit("call_ended", { callId }); });
-  socket.on("ice_candidate", ({ toUserId, candidate, callId }) => io.to(`user_${toUserId}`).emit("ice_candidate", { candidate, callId, fromUserId: socket.userId }));
+
+  socket.on("reject_call", ({ callId, toUserId }) => {
+    activeCalls.delete(callId);
+    iceCandidateBuffer.delete(callId);
+    io.to(`user_${toUserId}`).emit("call_rejected", { callId });
+  });
+
+  socket.on("end_call", ({ callId, toUserId }) => {
+    activeCalls.delete(callId);
+    iceCandidateBuffer.delete(callId);
+    io.to(`user_${toUserId}`).emit("call_ended", { callId });
+  });
+
+  socket.on("ice_candidate", ({ toUserId, candidate, callId }) => {
+    const payload = { candidate, callId, fromUserId: socket.userId };
+    const call = activeCalls.get(callId);
+    // Agar call abhi ringing state mein hai to buffer karo
+    if (call && call.status === "ringing") {
+      const buf = iceCandidateBuffer.get(callId);
+      if (buf) buf.push(payload);
+    } else {
+      io.to(`user_${toUserId}`).emit("ice_candidate", payload);
+    }
+  });
 
   socket.on("disconnect", () => {
     if (socket.userId) {
