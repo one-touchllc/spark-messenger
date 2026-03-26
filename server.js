@@ -49,16 +49,8 @@ db.exec(`
     status TEXT DEFAULT 'Hey there! I am using Spark Messenger.',
     about TEXT DEFAULT '',
     language TEXT DEFAULT 'en',
-    bio TEXT DEFAULT '',
-    location TEXT DEFAULT '',
-    website TEXT DEFAULT '',
     last_seen INTEGER DEFAULT (strftime('%s','now') * 1000),
     is_online INTEGER DEFAULT 0,
-    notifications_enabled INTEGER DEFAULT 1,
-    read_receipts INTEGER DEFAULT 1,
-    show_online INTEGER DEFAULT 1,
-    wallpaper TEXT DEFAULT '',
-    font_size TEXT DEFAULT 'medium',
     created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
   );
   CREATE TABLE IF NOT EXISTS contacts (
@@ -78,40 +70,34 @@ db.exec(`
     content TEXT DEFAULT '',
     type TEXT DEFAULT 'text',
     file_url TEXT, file_name TEXT, file_size INTEGER, file_mime TEXT,
-    reply_to TEXT DEFAULT NULL,
-    forwarded_from TEXT DEFAULT NULL,
+    reply_to TEXT,
     reactions TEXT DEFAULT '{}',
     timestamp INTEGER DEFAULT (strftime('%s','now') * 1000),
-    edited_at INTEGER DEFAULT NULL,
     is_read INTEGER DEFAULT 0,
     is_deleted INTEGER DEFAULT 0,
-    is_starred INTEGER DEFAULT 0
+    edited INTEGER DEFAULT 0
   );
   CREATE INDEX IF NOT EXISTS idx_messages_room ON messages(room_id);
   CREATE TABLE IF NOT EXISTS groups (
     id TEXT PRIMARY KEY, name TEXT NOT NULL, admin_id TEXT NOT NULL,
     avatar_color TEXT DEFAULT '#25D366', avatar_img TEXT,
     description TEXT DEFAULT '',
-    invite_link TEXT DEFAULT '',
-    is_muted INTEGER DEFAULT 0,
     created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
   );
   CREATE TABLE IF NOT EXISTS group_members (
     group_id TEXT NOT NULL, user_id TEXT NOT NULL,
     role TEXT DEFAULT 'member',
-    joined_at INTEGER DEFAULT (strftime('%s','now') * 1000),
     PRIMARY KEY (group_id, user_id)
   );
   CREATE TABLE IF NOT EXISTS group_messages (
     id TEXT PRIMARY KEY, group_id TEXT NOT NULL, from_user_id TEXT NOT NULL,
     content TEXT DEFAULT '', type TEXT DEFAULT 'text',
     file_url TEXT, file_name TEXT, file_size INTEGER, file_mime TEXT,
-    reply_to TEXT DEFAULT NULL,
+    reply_to TEXT,
     reactions TEXT DEFAULT '{}',
     timestamp INTEGER DEFAULT (strftime('%s','now') * 1000),
-    edited_at INTEGER DEFAULT NULL,
     is_deleted INTEGER DEFAULT 0,
-    is_starred INTEGER DEFAULT 0
+    edited INTEGER DEFAULT 0
   );
   CREATE INDEX IF NOT EXISTS idx_gmsg_group ON group_messages(group_id);
   CREATE TABLE IF NOT EXISTS statuses (
@@ -129,69 +115,62 @@ db.exec(`
     user_id TEXT NOT NULL, chat_id TEXT NOT NULL,
     PRIMARY KEY (user_id, chat_id)
   );
-  CREATE TABLE IF NOT EXISTS muted_chats (
-    user_id TEXT NOT NULL, chat_id TEXT NOT NULL, until INTEGER DEFAULT 0,
-    PRIMARY KEY (user_id, chat_id)
-  );
   CREATE TABLE IF NOT EXISTS push_subscriptions (
     user_id TEXT PRIMARY KEY, subscription TEXT NOT NULL
   );
-  CREATE TABLE IF NOT EXISTS starred_messages (
-    user_id TEXT NOT NULL, message_id TEXT NOT NULL,
-    PRIMARY KEY (user_id, message_id)
+  CREATE TABLE IF NOT EXISTS message_drafts (
+    user_id TEXT NOT NULL, chat_id TEXT NOT NULL, content TEXT DEFAULT '',
+    PRIMARY KEY (user_id, chat_id)
+  );
+  CREATE TABLE IF NOT EXISTS user_settings (
+    user_id TEXT PRIMARY KEY,
+    notification_sound INTEGER DEFAULT 1,
+    notification_vibrate INTEGER DEFAULT 1,
+    read_receipts INTEGER DEFAULT 1,
+    last_seen_visible INTEGER DEFAULT 1,
+    wallpaper TEXT DEFAULT '',
+    font_size TEXT DEFAULT 'medium',
+    enter_to_send INTEGER DEFAULT 1
+  );
+  CREATE TABLE IF NOT EXISTS scheduled_messages (
+    id TEXT PRIMARY KEY,
+    from_user_id TEXT NOT NULL,
+    to_user_id TEXT,
+    group_id TEXT,
+    content TEXT NOT NULL,
+    type TEXT DEFAULT 'text',
+    send_at INTEGER NOT NULL,
+    sent INTEGER DEFAULT 0
   );
   CREATE TABLE IF NOT EXISTS polls (
-    id TEXT PRIMARY KEY, room_id TEXT NOT NULL, creator_id TEXT NOT NULL,
-    question TEXT NOT NULL, options TEXT NOT NULL,
+    id TEXT PRIMARY KEY,
+    group_id TEXT,
+    room_id TEXT,
+    creator_id TEXT NOT NULL,
+    question TEXT NOT NULL,
+    options TEXT NOT NULL,
     votes TEXT DEFAULT '{}',
     created_at INTEGER DEFAULT (strftime('%s','now') * 1000)
   );
-  CREATE TABLE IF NOT EXISTS call_logs (
-    id TEXT PRIMARY KEY, caller_id TEXT NOT NULL, callee_id TEXT NOT NULL,
-    call_type TEXT DEFAULT 'voice', status TEXT DEFAULT 'missed',
-    duration INTEGER DEFAULT 0,
-    timestamp INTEGER DEFAULT (strftime('%s','now') * 1000)
-  );
-  CREATE TABLE IF NOT EXISTS notes (
-    id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
-    content TEXT NOT NULL,
-    timestamp INTEGER DEFAULT (strftime('%s','now') * 1000)
-  );
-  CREATE TABLE IF NOT EXISTS scheduled_messages (
-    id TEXT PRIMARY KEY, from_user_id TEXT NOT NULL, to_user_id TEXT,
-    group_id TEXT, content TEXT NOT NULL, type TEXT DEFAULT 'text',
-    scheduled_at INTEGER NOT NULL, sent INTEGER DEFAULT 0
-  );
 `);
 
-// Add columns if they don't exist (migration)
-const tryAddCol = (table, col, def) => {
-  try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`); } catch(e) {}
+// Migrate: add missing columns safely
+const addColumnSafe = (table, col, def) => {
+  try { db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`).run(); } catch(e) {}
 };
-tryAddCol('users', 'phone', 'TEXT');
-tryAddCol('users', 'bio', 'TEXT DEFAULT ""');
-tryAddCol('users', 'location', 'TEXT DEFAULT ""');
-tryAddCol('users', 'website', 'TEXT DEFAULT ""');
-tryAddCol('users', 'last_seen', 'INTEGER DEFAULT 0');
-tryAddCol('users', 'is_online', 'INTEGER DEFAULT 0');
-tryAddCol('users', 'notifications_enabled', 'INTEGER DEFAULT 1');
-tryAddCol('users', 'read_receipts', 'INTEGER DEFAULT 1');
-tryAddCol('users', 'show_online', 'INTEGER DEFAULT 1');
-tryAddCol('users', 'wallpaper', 'TEXT DEFAULT ""');
-tryAddCol('users', 'font_size', 'TEXT DEFAULT "medium"');
-tryAddCol('messages', 'reply_to', 'TEXT DEFAULT NULL');
-tryAddCol('messages', 'forwarded_from', 'TEXT DEFAULT NULL');
-tryAddCol('messages', 'reactions', 'TEXT DEFAULT "{}"');
-tryAddCol('messages', 'edited_at', 'INTEGER DEFAULT NULL');
-tryAddCol('messages', 'is_starred', 'INTEGER DEFAULT 0');
-tryAddCol('group_messages', 'reply_to', 'TEXT DEFAULT NULL');
-tryAddCol('group_messages', 'reactions', 'TEXT DEFAULT "{}"');
-tryAddCol('group_messages', 'edited_at', 'INTEGER DEFAULT NULL');
-tryAddCol('group_messages', 'is_starred', 'INTEGER DEFAULT 0');
-tryAddCol('contacts', 'nickname', 'TEXT DEFAULT ""');
-tryAddCol('statuses', 'caption', 'TEXT DEFAULT ""');
-tryAddCol('statuses', 'views', 'TEXT DEFAULT "[]"');
-tryAddCol('groups', 'invite_link', 'TEXT DEFAULT ""');
+addColumnSafe('users', 'phone', 'TEXT');
+addColumnSafe('messages', 'reply_to', 'TEXT');
+addColumnSafe('messages', 'reactions', "TEXT DEFAULT '{}'");
+addColumnSafe('messages', 'edited', 'INTEGER DEFAULT 0');
+addColumnSafe('group_messages', 'reply_to', 'TEXT');
+addColumnSafe('group_messages', 'reactions', "TEXT DEFAULT '{}'");
+addColumnSafe('group_messages', 'edited', 'INTEGER DEFAULT 0');
+addColumnSafe('statuses', 'caption', "TEXT DEFAULT ''");
+addColumnSafe('statuses', 'views', "TEXT DEFAULT '[]'");
+addColumnSafe('contacts', 'nickname', "TEXT DEFAULT ''");
+addColumnSafe('group_members', 'role', "TEXT DEFAULT 'member'");
+addColumnSafe('users', 'last_seen', 'INTEGER DEFAULT 0');
+addColumnSafe('users', 'is_online', 'INTEGER DEFAULT 0');
 
 const JWT_SECRET = process.env.JWT_SECRET || "sparkmessenger_v5_secret";
 let VAPID_PUBLIC = process.env.VAPID_PUBLIC;
@@ -205,7 +184,7 @@ try {
   webpush.setVapidDetails("mailto:admin@sparkmessenger.app", VAPID_PUBLIC, VAPID_PRIVATE);
 } catch(e) {}
 
-const userSockets = new Map();
+const userSockets = new Map(); // userId -> socketId
 const activeCalls = new Map();
 
 function getRoomId(a, b) { return [a, b].sort().join("_"); }
@@ -216,54 +195,23 @@ function authMW(req, res, next) {
   catch { res.status(401).json({ error: "Invalid token" }); }
 }
 function safeUser(u) {
-  return {
-    id: u.id, username: u.username, phone: u.phone || null,
-    avatarColor: u.avatar_color, avatarImg: u.avatar_img,
-    status: u.status, about: u.about, language: u.language,
-    bio: u.bio || '', location: u.location || '', website: u.website || '',
-    lastSeen: u.last_seen || 0, isOnline: !!u.is_online,
-    readReceipts: u.read_receipts !== undefined ? !!u.read_receipts : true,
-    showOnline: u.show_online !== undefined ? !!u.show_online : true,
-    wallpaper: u.wallpaper || '', fontSize: u.font_size || 'medium'
-  };
+  return { id: u.id, username: u.username, phone: u.phone, avatarColor: u.avatar_color, avatarImg: u.avatar_img, status: u.status, about: u.about, language: u.language, lastSeen: u.last_seen };
 }
 function fmtMsg(m) {
-  return {
-    id: m.id, roomId: m.room_id, fromUserId: m.from_user_id, toUserId: m.to_user_id,
-    content: m.is_deleted ? "" : (m.content || ""), type: m.type,
-    fileUrl: m.is_deleted ? null : m.file_url, fileName: m.file_name,
-    fileSize: m.file_size, fileMime: m.file_mime,
-    replyTo: m.reply_to || null, forwardedFrom: m.forwarded_from || null,
-    reactions: JSON.parse(m.reactions || '{}'),
-    timestamp: m.timestamp, editedAt: m.edited_at || null,
-    read: !!m.is_read, deleted: !!m.is_deleted, starred: !!m.is_starred
-  };
+  let reactions = {};
+  try { reactions = JSON.parse(m.reactions || '{}'); } catch(e) {}
+  return { id: m.id, roomId: m.room_id, fromUserId: m.from_user_id, toUserId: m.to_user_id, content: m.is_deleted ? "" : (m.content || ""), type: m.type, fileUrl: m.is_deleted ? null : m.file_url, fileName: m.file_name, fileSize: m.file_size, fileMime: m.file_mime, replyTo: m.reply_to, reactions, timestamp: m.timestamp, read: !!m.is_read, deleted: !!m.is_deleted, edited: !!m.edited };
 }
 function fmtGMsg(m) {
-  return {
-    id: m.id, groupId: m.group_id, fromUserId: m.from_user_id,
-    fromUsername: m.username, fromAvatarColor: m.avatar_color,
-    content: m.is_deleted ? "" : (m.content || ""), type: m.type,
-    fileUrl: m.is_deleted ? null : m.file_url, fileName: m.file_name,
-    fileSize: m.file_size, fileMime: m.file_mime,
-    replyTo: m.reply_to || null,
-    reactions: JSON.parse(m.reactions || '{}'),
-    timestamp: m.timestamp, editedAt: m.edited_at || null,
-    deleted: !!m.is_deleted, starred: !!m.is_starred
-  };
+  let reactions = {};
+  try { reactions = JSON.parse(m.reactions || '{}'); } catch(e) {}
+  return { id: m.id, groupId: m.group_id, fromUserId: m.from_user_id, fromUsername: m.username, fromAvatarColor: m.avatar_color, content: m.is_deleted ? "" : (m.content || ""), type: m.type, fileUrl: m.is_deleted ? null : m.file_url, fileName: m.file_name, fileSize: m.file_size, fileMime: m.file_mime, replyTo: m.reply_to, reactions, timestamp: m.timestamp, deleted: !!m.is_deleted, edited: !!m.edited };
 }
 function getGroupFull(id) {
   const g = db.prepare("SELECT * FROM groups WHERE id = ?").get(id);
   if (!g) return null;
   const members = db.prepare("SELECT gm.user_id, gm.role, u.username, u.avatar_color, u.avatar_img FROM group_members gm JOIN users u ON u.id = gm.user_id WHERE gm.group_id = ?").all(id);
-  return {
-    id: g.id, name: g.name, adminId: g.admin_id,
-    avatarColor: g.avatar_color, avatarImg: g.avatar_img,
-    description: g.description, inviteLink: g.invite_link || '',
-    members: members.map(m => m.user_id),
-    membersInfo: members,
-    createdAt: g.created_at
-  };
+  return { id: g.id, name: g.name, adminId: g.admin_id, avatarColor: g.avatar_color, avatarImg: g.avatar_img, description: g.description, members: members.map(m => m.user_id), memberDetails: members, createdAt: g.created_at };
 }
 async function sendPushNotif(toUserId, title, body, data = {}) {
   try {
@@ -272,10 +220,18 @@ async function sendPushNotif(toUserId, title, body, data = {}) {
     await webpush.sendNotification(JSON.parse(row.subscription), JSON.stringify({ title, body, data }));
   } catch(e) {}
 }
+function getUserSettings(userId) {
+  let s = db.prepare("SELECT * FROM user_settings WHERE user_id = ?").get(userId);
+  if (!s) {
+    db.prepare("INSERT OR IGNORE INTO user_settings (user_id) VALUES (?)").run(userId);
+    s = db.prepare("SELECT * FROM user_settings WHERE user_id = ?").get(userId);
+  }
+  return s;
+}
 
-// ══════════════════════════════════════════
-// AUTH
-// ══════════════════════════════════════════
+// ══════════════════════════════
+// AUTH ROUTES
+// ══════════════════════════════
 app.post("/api/register", async (req, res) => {
   const { username, password, phone } = req.body;
   if (!username || !password) return res.status(400).json({ error: "Username and password required" });
@@ -324,12 +280,16 @@ app.post("/api/upload", authMW, upload.single("file"), (req, res) => {
   res.json({ fileUrl: `/uploads/${req.file.filename}`, fileName: req.file.originalname, fileSize: req.file.size, fileMime: req.file.mimetype });
 });
 
-// ══════════════════════════════════════════
-// CONTACTS - Updated: one-sided add
-// ══════════════════════════════════════════
+// ══════════════════════════════
+// CONTACTS — one-way add (both see each other)
+// ══════════════════════════════
 app.get("/api/contacts", authMW, (req, res) => {
-  const rows = db.prepare("SELECT u.*, c.nickname FROM contacts c JOIN users u ON u.id = c.contact_id WHERE c.user_id = ?").all(req.user.id);
-  res.json(rows.map(u => ({ ...safeUser(u), online: userSockets.has(u.id), nickname: u.nickname || '' })));
+  const rows = db.prepare(`
+    SELECT u.*, c.nickname FROM contacts c 
+    JOIN users u ON u.id = c.contact_id 
+    WHERE c.user_id = ?
+  `).all(req.user.id);
+  res.json(rows.map(u => ({ ...safeUser(u), nickname: u.nickname, online: userSockets.has(u.id) })));
 });
 
 app.post("/api/contacts/add", authMW, (req, res) => {
@@ -337,12 +297,12 @@ app.post("/api/contacts/add", authMW, (req, res) => {
   let found;
   if (phone) {
     found = db.prepare("SELECT * FROM users WHERE phone = ?").get(phone);
-  } else if (username) {
+  } else {
     found = db.prepare("SELECT * FROM users WHERE username = ?").get(username);
   }
   if (!found) return res.status(404).json({ error: "User not found" });
   if (found.id === req.user.id) return res.status(400).json({ error: "Cannot add yourself" });
-  // One-sided add - both see each other
+  // Add both directions
   db.prepare("INSERT OR IGNORE INTO contacts (user_id, contact_id) VALUES (?, ?)").run(req.user.id, found.id);
   db.prepare("INSERT OR IGNORE INTO contacts (user_id, contact_id) VALUES (?, ?)").run(found.id, req.user.id);
   // Notify the other user
@@ -350,7 +310,7 @@ app.post("/api/contacts/add", authMW, (req, res) => {
     const me = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.id);
     io.to(`user_${found.id}`).emit("contact_added", { user: { ...safeUser(me), online: true } });
   }
-  res.json({ user: { ...safeUser(found), online: userSockets.has(found.id), nickname: '' } });
+  res.json({ user: { ...safeUser(found), online: userSockets.has(found.id) } });
 });
 
 app.put("/api/contacts/:id/nickname", authMW, (req, res) => {
@@ -371,53 +331,43 @@ app.get("/api/blocked", authMW, (req, res) => {
   res.json(rows.map(safeUser));
 });
 
-// ══════════════════════════════════════════
-// PROFILE - with username change
-// ══════════════════════════════════════════
+// ══════════════════════════════
+// PROFILE — change username, phone, etc.
+// ══════════════════════════════
 app.put("/api/profile", authMW, async (req, res) => {
-  const { status, about, avatarImg, language, username, bio, location, website,
-          notificationsEnabled, readReceipts, showOnline, wallpaper, fontSize, phone, password, newPassword } = req.body;
+  const { status, about, avatarImg, language, newUsername, phone, currentPassword, newPassword } = req.body;
+  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.id);
   
-  // Username change
-  if (username && username !== req.user.username) {
-    if (username.length < 3) return res.status(400).json({ error: "Username too short" });
-    const exists = db.prepare("SELECT id FROM users WHERE username = ? AND id != ?").get(username, req.user.id);
+  if (newUsername && newUsername !== user.username) {
+    if (newUsername.length < 3) return res.status(400).json({ error: "Username must be at least 3 characters" });
+    const exists = db.prepare("SELECT id FROM users WHERE username = ? AND id != ?").get(newUsername, req.user.id);
     if (exists) return res.status(409).json({ error: "Username already taken" });
-    db.prepare("UPDATE users SET username = ? WHERE id = ?").run(username, req.user.id);
+    db.prepare("UPDATE users SET username = ? WHERE id = ?").run(newUsername, req.user.id);
   }
-  
-  // Password change
-  if (password && newPassword) {
-    const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.id);
-    const valid = await bcrypt.compare(password, user.password);
-    if (!valid) return res.status(401).json({ error: "Current password is incorrect" });
+  if (phone !== undefined) {
+    if (phone) {
+      const phoneExists = db.prepare("SELECT id FROM users WHERE phone = ? AND id != ?").get(phone, req.user.id);
+      if (phoneExists) return res.status(409).json({ error: "Phone number already in use" });
+    }
+    db.prepare("UPDATE users SET phone = ? WHERE id = ?").run(phone || null, req.user.id);
+  }
+  if (newPassword && currentPassword) {
+    if (!(await bcrypt.compare(currentPassword, user.password))) return res.status(400).json({ error: "Current password is wrong" });
     const hashed = await bcrypt.hash(newPassword, 10);
     db.prepare("UPDATE users SET password = ? WHERE id = ?").run(hashed, req.user.id);
   }
-
   if (status !== undefined) db.prepare("UPDATE users SET status = ? WHERE id = ?").run(status, req.user.id);
   if (about !== undefined) db.prepare("UPDATE users SET about = ? WHERE id = ?").run(about, req.user.id);
   if (avatarImg !== undefined) db.prepare("UPDATE users SET avatar_img = ? WHERE id = ?").run(avatarImg, req.user.id);
   if (language !== undefined) db.prepare("UPDATE users SET language = ? WHERE id = ?").run(language, req.user.id);
-  if (bio !== undefined) db.prepare("UPDATE users SET bio = ? WHERE id = ?").run(bio, req.user.id);
-  if (location !== undefined) db.prepare("UPDATE users SET location = ? WHERE id = ?").run(location, req.user.id);
-  if (website !== undefined) db.prepare("UPDATE users SET website = ? WHERE id = ?").run(website, req.user.id);
-  if (phone !== undefined) db.prepare("UPDATE users SET phone = ? WHERE id = ?").run(phone || null, req.user.id);
-  if (notificationsEnabled !== undefined) db.prepare("UPDATE users SET notifications_enabled = ? WHERE id = ?").run(notificationsEnabled ? 1 : 0, req.user.id);
-  if (readReceipts !== undefined) db.prepare("UPDATE users SET read_receipts = ? WHERE id = ?").run(readReceipts ? 1 : 0, req.user.id);
-  if (showOnline !== undefined) db.prepare("UPDATE users SET show_online = ? WHERE id = ?").run(showOnline ? 1 : 0, req.user.id);
-  if (wallpaper !== undefined) db.prepare("UPDATE users SET wallpaper = ? WHERE id = ?").run(wallpaper, req.user.id);
-  if (fontSize !== undefined) db.prepare("UPDATE users SET font_size = ? WHERE id = ?").run(fontSize, req.user.id);
-
+  
   const updated = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.id);
-  // Notify contacts of profile change
-  io.emit("profile_updated", safeUser(updated));
   res.json(safeUser(updated));
 });
 
-// ══════════════════════════════════════════
-// MESSAGES
-// ══════════════════════════════════════════
+// ══════════════════════════════
+// MESSAGES with reactions, reply, edit
+// ══════════════════════════════
 app.get("/api/messages/:userId", authMW, (req, res) => {
   const isBlocked = db.prepare("SELECT 1 FROM blocked WHERE user_id = ? AND blocked_id = ?").get(req.user.id, req.params.userId);
   if (isBlocked) return res.json([]);
@@ -425,77 +375,55 @@ app.get("/api/messages/:userId", authMW, (req, res) => {
   res.json(db.prepare("SELECT * FROM messages WHERE room_id = ? ORDER BY timestamp ASC").all(roomId).map(fmtMsg));
 });
 
-// Edit message
-app.put("/api/messages/:id", authMW, (req, res) => {
-  const { content } = req.body;
-  const msg = db.prepare("SELECT * FROM messages WHERE id = ? AND from_user_id = ?").get(req.params.id, req.user.id);
-  if (!msg) return res.status(404).json({ error: "Not found" });
-  const now = Date.now();
-  db.prepare("UPDATE messages SET content = ?, edited_at = ? WHERE id = ?").run(content, now, req.params.id);
-  io.to(`user_${msg.to_user_id}`).emit("message_edited", { messageId: req.params.id, content, editedAt: now });
-  io.to(`user_${req.user.id}`).emit("message_edited", { messageId: req.params.id, content, editedAt: now });
+app.delete("/api/messages/:id", authMW, (req, res) => {
+  const m = db.prepare("SELECT * FROM messages WHERE id = ?").get(req.params.id);
+  if (!m || m.from_user_id !== req.user.id) return res.status(403).json({ error: "Forbidden" });
+  db.prepare("UPDATE messages SET is_deleted = 1, content = '', file_url = NULL WHERE id = ?").run(req.params.id);
+  io.to(`user_${m.to_user_id}`).emit("message_deleted", { messageId: req.params.id });
+  io.to(`user_${m.from_user_id}`).emit("message_deleted", { messageId: req.params.id });
   res.json({ ok: true });
 });
 
-// React to message
-app.post("/api/messages/:id/react", authMW, (req, res) => {
-  const { emoji } = req.body;
-  const msg = db.prepare("SELECT * FROM messages WHERE id = ?").get(req.params.id);
-  if (!msg) return res.status(404).json({ error: "Not found" });
-  const reactions = JSON.parse(msg.reactions || '{}');
-  if (!reactions[emoji]) reactions[emoji] = [];
-  const idx = reactions[emoji].indexOf(req.user.id);
-  if (idx >= 0) reactions[emoji].splice(idx, 1);
-  else reactions[emoji].push(req.user.id);
-  if (!reactions[emoji].length) delete reactions[emoji];
-  db.prepare("UPDATE messages SET reactions = ? WHERE id = ?").run(JSON.stringify(reactions), req.params.id);
-  const roomId = msg.room_id;
-  io.to(`user_${msg.from_user_id}`).emit("message_reaction", { messageId: req.params.id, reactions });
-  io.to(`user_${msg.to_user_id}`).emit("message_reaction", { messageId: req.params.id, reactions });
-  res.json({ ok: true });
+// Search messages
+app.get("/api/messages/:userId/search", authMW, (req, res) => {
+  const q = req.query.q;
+  if (!q) return res.json([]);
+  const roomId = getRoomId(req.user.id, req.params.userId);
+  res.json(db.prepare("SELECT * FROM messages WHERE room_id = ? AND content LIKE ? AND is_deleted = 0 ORDER BY timestamp ASC").all(roomId, `%${q}%`).map(fmtMsg));
 });
 
-// Star message
-app.post("/api/messages/:id/star", authMW, (req, res) => {
-  const existing = db.prepare("SELECT 1 FROM starred_messages WHERE user_id = ? AND message_id = ?").get(req.user.id, req.params.id);
-  if (existing) {
-    db.prepare("DELETE FROM starred_messages WHERE user_id = ? AND message_id = ?").run(req.user.id, req.params.id);
-    res.json({ starred: false });
-  } else {
-    db.prepare("INSERT OR IGNORE INTO starred_messages (user_id, message_id) VALUES (?, ?)").run(req.user.id, req.params.id);
-    res.json({ starred: true });
-  }
-});
-
-app.get("/api/starred", authMW, (req, res) => {
-  const ids = db.prepare("SELECT message_id FROM starred_messages WHERE user_id = ?").all(req.user.id).map(r => r.message_id);
-  if (!ids.length) return res.json([]);
-  const msgs = db.prepare(`SELECT * FROM messages WHERE id IN (${ids.map(() => '?').join(',')}) ORDER BY timestamp DESC`).all(...ids);
-  res.json(msgs.map(fmtMsg));
-});
-
+// ══════════════════════════════
+// PIN / ARCHIVE / META
+// ══════════════════════════════
 app.post("/api/pin/:chatId", authMW, (req, res) => { db.prepare("INSERT OR IGNORE INTO pinned_chats (user_id, chat_id) VALUES (?, ?)").run(req.user.id, req.params.chatId); res.json({ ok: true }); });
 app.post("/api/unpin/:chatId", authMW, (req, res) => { db.prepare("DELETE FROM pinned_chats WHERE user_id = ? AND chat_id = ?").run(req.user.id, req.params.chatId); res.json({ ok: true }); });
 app.post("/api/archive/:chatId", authMW, (req, res) => { db.prepare("INSERT OR IGNORE INTO archived_chats (user_id, chat_id) VALUES (?, ?)").run(req.user.id, req.params.chatId); res.json({ ok: true }); });
 app.post("/api/unarchive/:chatId", authMW, (req, res) => { db.prepare("DELETE FROM archived_chats WHERE user_id = ? AND chat_id = ?").run(req.user.id, req.params.chatId); res.json({ ok: true }); });
-app.post("/api/mute/:chatId", authMW, (req, res) => {
-  const { until } = req.body;
-  db.prepare("INSERT OR REPLACE INTO muted_chats (user_id, chat_id, until) VALUES (?, ?, ?)").run(req.user.id, req.params.chatId, until || 0);
-  res.json({ ok: true });
-});
-app.post("/api/unmute/:chatId", authMW, (req, res) => { db.prepare("DELETE FROM muted_chats WHERE user_id = ? AND chat_id = ?").run(req.user.id, req.params.chatId); res.json({ ok: true }); });
-
 app.get("/api/meta", authMW, (req, res) => {
   res.json({
     pinned: db.prepare("SELECT chat_id FROM pinned_chats WHERE user_id = ?").all(req.user.id).map(r => r.chat_id),
-    archived: db.prepare("SELECT chat_id FROM archived_chats WHERE user_id = ?").all(req.user.id).map(r => r.chat_id),
-    muted: db.prepare("SELECT chat_id FROM muted_chats WHERE user_id = ?").all(req.user.id).map(r => r.chat_id)
+    archived: db.prepare("SELECT chat_id FROM archived_chats WHERE user_id = ?").all(req.user.id).map(r => r.chat_id)
   });
 });
 
-// ══════════════════════════════════════════
-// STATUSES
-// ══════════════════════════════════════════
+// ══════════════════════════════
+// USER SETTINGS
+// ══════════════════════════════
+app.get("/api/settings", authMW, (req, res) => res.json(getUserSettings(req.user.id)));
+app.put("/api/settings", authMW, (req, res) => {
+  const s = req.body;
+  db.prepare("INSERT OR REPLACE INTO user_settings (user_id, notification_sound, notification_vibrate, read_receipts, last_seen_visible, wallpaper, font_size, enter_to_send) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(
+    req.user.id,
+    s.notification_sound ?? 1, s.notification_vibrate ?? 1,
+    s.read_receipts ?? 1, s.last_seen_visible ?? 1,
+    s.wallpaper ?? '', s.font_size ?? 'medium', s.enter_to_send ?? 1
+  );
+  res.json({ ok: true });
+});
+
+// ══════════════════════════════
+// STATUSES with views & caption
+// ══════════════════════════════
 app.get("/api/statuses", authMW, (req, res) => {
   const contactIds = db.prepare("SELECT contact_id FROM contacts WHERE user_id = ?").all(req.user.id).map(r => r.contact_id);
   const allIds = [req.user.id, ...contactIds];
@@ -504,7 +432,7 @@ app.get("/api/statuses", authMW, (req, res) => {
     const u = db.prepare("SELECT * FROM users WHERE id = ?").get(uid);
     if (!u) return null;
     const sts = db.prepare("SELECT * FROM statuses WHERE user_id = ? AND timestamp > ? ORDER BY timestamp ASC").all(uid, cutoff);
-    return { user: safeUser(u), statuses: sts, isMe: uid === req.user.id };
+    return { user: safeUser(u), statuses: sts.map(s => ({...s, views: JSON.parse(s.views||'[]')})), isMe: uid === req.user.id };
   }).filter(Boolean);
   res.json(result);
 });
@@ -520,12 +448,13 @@ app.post("/api/status", authMW, (req, res) => {
 app.post("/api/status/:id/view", authMW, (req, res) => {
   const st = db.prepare("SELECT * FROM statuses WHERE id = ?").get(req.params.id);
   if (!st) return res.status(404).json({ error: "Not found" });
-  let views = JSON.parse(st.views || '[]');
+  let views = [];
+  try { views = JSON.parse(st.views || '[]'); } catch(e) {}
   if (!views.includes(req.user.id)) {
     views.push(req.user.id);
     db.prepare("UPDATE statuses SET views = ? WHERE id = ?").run(JSON.stringify(views), req.params.id);
   }
-  res.json({ ok: true, views });
+  res.json({ ok: true });
 });
 
 app.delete("/api/status/:id", authMW, (req, res) => {
@@ -533,25 +462,20 @@ app.delete("/api/status/:id", authMW, (req, res) => {
   res.json({ ok: true });
 });
 
-// ══════════════════════════════════════════
+// ══════════════════════════════
 // GROUPS
-// ══════════════════════════════════════════
+// ══════════════════════════════
 app.post("/api/groups", authMW, (req, res) => {
   const { name, memberIds } = req.body;
   if (!name || !memberIds?.length) return res.status(400).json({ error: "Required" });
   const id = uuidv4();
-  const inviteLink = uuidv4().replace(/-/g, '').substring(0, 12);
-  db.prepare("INSERT INTO groups (id, name, admin_id, invite_link) VALUES (?, ?, ?, ?)").run(id, name, req.user.id, inviteLink);
+  db.prepare("INSERT INTO groups (id, name, admin_id) VALUES (?, ?, ?)").run(id, name, req.user.id);
   for (const mId of [req.user.id, ...memberIds]) {
     const role = mId === req.user.id ? 'admin' : 'member';
     db.prepare("INSERT OR IGNORE INTO group_members (group_id, user_id, role) VALUES (?, ?, ?)").run(id, mId, role);
   }
   const group = getGroupFull(id);
   group.members.forEach(mId => { if (userSockets.has(mId)) io.to(`user_${mId}`).emit("added_to_group", group); });
-  // Send push to offline members
-  for (const mId of memberIds) {
-    if (!userSockets.has(mId)) sendPushNotif(mId, 'New Group', `You were added to group "${name}"`, { type: 'group', groupId: id });
-  }
   res.json(group);
 });
 
@@ -573,18 +497,18 @@ app.post("/api/groups/:id/leave", authMW, (req, res) => {
   const remaining = db.prepare("SELECT user_id FROM group_members WHERE group_id = ?").all(req.params.id);
   if (!remaining.length) db.prepare("DELETE FROM groups WHERE id = ?").run(req.params.id);
   else if (g.admin_id === req.user.id) db.prepare("UPDATE groups SET admin_id = ? WHERE id = ?").run(remaining[0].user_id, req.params.id);
-  io.emit("group_updated", getGroupFull(req.params.id));
+  const updated = getGroupFull(req.params.id);
+  if (updated) io.emit("group_updated", updated);
   res.json({ ok: true });
 });
 
 app.put("/api/groups/:id", authMW, (req, res) => {
   const g = db.prepare("SELECT * FROM groups WHERE id = ?").get(req.params.id);
   if (!g || g.admin_id !== req.user.id) return res.status(403).json({ error: "Forbidden" });
-  const { name, description, avatarImg, avatarColor } = req.body;
+  const { name, description, avatarImg } = req.body;
   if (name) db.prepare("UPDATE groups SET name = ? WHERE id = ?").run(name, req.params.id);
   if (description !== undefined) db.prepare("UPDATE groups SET description = ? WHERE id = ?").run(description, req.params.id);
   if (avatarImg !== undefined) db.prepare("UPDATE groups SET avatar_img = ? WHERE id = ?").run(avatarImg, req.params.id);
-  if (avatarColor !== undefined) db.prepare("UPDATE groups SET avatar_color = ? WHERE id = ?").run(avatarColor, req.params.id);
   const updated = getGroupFull(req.params.id);
   io.emit("group_updated", updated);
   res.json(updated);
@@ -593,14 +517,13 @@ app.put("/api/groups/:id", authMW, (req, res) => {
 app.post("/api/groups/:id/add-member", authMW, (req, res) => {
   const { userId } = req.body;
   const g = db.prepare("SELECT * FROM groups WHERE id = ?").get(req.params.id);
-  if (!g) return res.status(404).json({ error: "Not found" });
-  const isMember = db.prepare("SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ?").get(req.params.id, req.user.id);
-  if (!isMember) return res.status(403).json({ error: "Forbidden" });
+  if (!g || g.admin_id !== req.user.id) return res.status(403).json({ error: "Forbidden" });
   db.prepare("INSERT OR IGNORE INTO group_members (group_id, user_id, role) VALUES (?, ?, 'member')").run(req.params.id, userId);
-  const updated = getGroupFull(req.params.id);
-  io.emit("group_updated", updated);
-  if (userSockets.has(userId)) io.to(`user_${userId}`).emit("added_to_group", updated);
-  res.json(updated);
+  const group = getGroupFull(req.params.id);
+  io.to(`user_${userId}`).emit("added_to_group", group);
+  if (userSockets.has(userId)) io.to(`user_${userId}`).emit("added_to_group", group);
+  io.emit("group_updated", group);
+  res.json(group);
 });
 
 app.post("/api/groups/:id/remove-member", authMW, (req, res) => {
@@ -608,142 +531,75 @@ app.post("/api/groups/:id/remove-member", authMW, (req, res) => {
   const g = db.prepare("SELECT * FROM groups WHERE id = ?").get(req.params.id);
   if (!g || g.admin_id !== req.user.id) return res.status(403).json({ error: "Forbidden" });
   db.prepare("DELETE FROM group_members WHERE group_id = ? AND user_id = ?").run(req.params.id, userId);
-  const updated = getGroupFull(req.params.id);
-  io.emit("group_updated", updated);
-  if (userSockets.has(userId)) io.to(`user_${userId}`).emit("removed_from_group", { groupId: req.params.id });
-  res.json(updated);
+  const group = getGroupFull(req.params.id);
+  io.emit("group_updated", group);
+  io.to(`user_${userId}`).emit("removed_from_group", { groupId: req.params.id });
+  res.json(group);
 });
 
-// Group message reactions
-app.post("/api/group-messages/:id/react", authMW, (req, res) => {
-  const { emoji } = req.body;
-  const msg = db.prepare("SELECT * FROM group_messages WHERE id = ?").get(req.params.id);
-  if (!msg) return res.status(404).json({ error: "Not found" });
-  const reactions = JSON.parse(msg.reactions || '{}');
-  if (!reactions[emoji]) reactions[emoji] = [];
-  const idx = reactions[emoji].indexOf(req.user.id);
-  if (idx >= 0) reactions[emoji].splice(idx, 1);
-  else reactions[emoji].push(req.user.id);
-  if (!reactions[emoji].length) delete reactions[emoji];
-  db.prepare("UPDATE group_messages SET reactions = ? WHERE id = ?").run(JSON.stringify(reactions), req.params.id);
-  io.to(`group_${msg.group_id}`).emit("group_message_reaction", { messageId: req.params.id, reactions });
-  res.json({ ok: true });
-});
-
-// ══════════════════════════════════════════
-// CALL LOGS
-// ══════════════════════════════════════════
-app.get("/api/call-logs", authMW, (req, res) => {
-  const logs = db.prepare(`
-    SELECT cl.*, 
-      caller.username as caller_name, caller.avatar_color as caller_color, caller.avatar_img as caller_img,
-      callee.username as callee_name, callee.avatar_color as callee_color, callee.avatar_img as callee_img
-    FROM call_logs cl 
-    JOIN users caller ON caller.id = cl.caller_id
-    JOIN users callee ON callee.id = cl.callee_id
-    WHERE cl.caller_id = ? OR cl.callee_id = ?
-    ORDER BY cl.timestamp DESC LIMIT 50
-  `).all(req.user.id, req.user.id);
-  res.json(logs);
-});
-
-// ══════════════════════════════════════════
-// NOTES (self chat)
-// ══════════════════════════════════════════
-app.get("/api/notes", authMW, (req, res) => {
-  res.json(db.prepare("SELECT * FROM notes WHERE user_id = ? ORDER BY timestamp DESC").all(req.user.id));
-});
-app.post("/api/notes", authMW, (req, res) => {
-  const { content } = req.body;
-  const id = uuidv4();
-  db.prepare("INSERT INTO notes (id, user_id, content) VALUES (?, ?, ?)").run(id, req.user.id, content);
-  res.json({ id, content, timestamp: Date.now() });
-});
-app.delete("/api/notes/:id", authMW, (req, res) => {
-  db.prepare("DELETE FROM notes WHERE id = ? AND user_id = ?").run(req.params.id, req.user.id);
-  res.json({ ok: true });
-});
-
-// ══════════════════════════════════════════
-// SCHEDULED MESSAGES
-// ══════════════════════════════════════════
-app.post("/api/schedule", authMW, (req, res) => {
-  const { toUserId, groupId, content, type, scheduledAt } = req.body;
-  const id = uuidv4();
-  db.prepare("INSERT INTO scheduled_messages (id, from_user_id, to_user_id, group_id, content, type, scheduled_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(id, req.user.id, toUserId || null, groupId || null, content, type || 'text', scheduledAt);
-  res.json({ ok: true, id });
-});
-app.get("/api/schedule", authMW, (req, res) => {
-  res.json(db.prepare("SELECT * FROM scheduled_messages WHERE from_user_id = ? AND sent = 0 ORDER BY scheduled_at ASC").all(req.user.id));
-});
-app.delete("/api/schedule/:id", authMW, (req, res) => {
-  db.prepare("DELETE FROM scheduled_messages WHERE id = ? AND from_user_id = ?").run(req.params.id, req.user.id);
-  res.json({ ok: true });
-});
-
-// ══════════════════════════════════════════
-// SEARCH
-// ══════════════════════════════════════════
-app.get("/api/search", authMW, (req, res) => {
-  const q = req.query.q;
-  if (!q) return res.json({ users: [], messages: [] });
-  const users = db.prepare("SELECT * FROM users WHERE (username LIKE ? OR phone LIKE ?) AND id != ? LIMIT 10").all(`%${q}%`, `%${q}%`, req.user.id).map(safeUser);
-  const contactIds = db.prepare("SELECT contact_id FROM contacts WHERE user_id = ?").all(req.user.id).map(r => r.contact_id);
-  let messages = [];
-  if (contactIds.length) {
-    const roomIds = contactIds.map(id => `'${getRoomId(req.user.id, id)}'`).join(',');
-    messages = db.prepare(`SELECT m.*, u.username as from_username FROM messages m JOIN users u ON u.id = m.from_user_id WHERE m.room_id IN (${roomIds}) AND m.content LIKE ? AND m.is_deleted = 0 ORDER BY m.timestamp DESC LIMIT 20`).all(`%${q}%`);
-  }
-  res.json({ users, messages });
-});
-
-// ══════════════════════════════════════════
+// ══════════════════════════════
 // POLLS
-// ══════════════════════════════════════════
+// ══════════════════════════════
 app.post("/api/polls", authMW, (req, res) => {
-  const { roomId, question, options } = req.body;
+  const { question, options, groupId, roomId } = req.body;
+  if (!question || !options?.length) return res.status(400).json({ error: "Required" });
   const id = uuidv4();
-  db.prepare("INSERT INTO polls (id, room_id, creator_id, question, options) VALUES (?, ?, ?, ?, ?)").run(id, roomId, req.user.id, question, JSON.stringify(options));
-  res.json({ id, question, options, votes: {} });
+  db.prepare("INSERT INTO polls (id, creator_id, question, options, group_id, room_id) VALUES (?, ?, ?, ?, ?, ?)").run(id, req.user.id, question, JSON.stringify(options), groupId || null, roomId || null);
+  res.json({ id, question, options, votes: {}, creatorId: req.user.id });
 });
+
 app.post("/api/polls/:id/vote", authMW, (req, res) => {
   const { option } = req.body;
   const poll = db.prepare("SELECT * FROM polls WHERE id = ?").get(req.params.id);
   if (!poll) return res.status(404).json({ error: "Not found" });
-  const votes = JSON.parse(poll.votes || '{}');
-  // Remove existing vote
-  Object.keys(votes).forEach(k => { votes[k] = votes[k].filter(uid => uid !== req.user.id); });
-  if (!votes[option]) votes[option] = [];
-  votes[option].push(req.user.id);
+  let votes = {};
+  try { votes = JSON.parse(poll.votes); } catch(e) {}
+  votes[req.user.id] = option;
   db.prepare("UPDATE polls SET votes = ? WHERE id = ?").run(JSON.stringify(votes), req.params.id);
-  io.to(poll.room_id).emit("poll_updated", { pollId: req.params.id, votes });
-  res.json({ ok: true, votes });
+  const result = { ...poll, votes };
+  if (poll.group_id) io.to(`group_${poll.group_id}`).emit("poll_updated", result);
+  res.json(result);
+});
+
+app.get("/api/polls/:id", authMW, (req, res) => {
+  const poll = db.prepare("SELECT * FROM polls WHERE id = ?").get(req.params.id);
+  if (!poll) return res.status(404).json({ error: "Not found" });
+  res.json({ ...poll, options: JSON.parse(poll.options), votes: JSON.parse(poll.votes) });
+});
+
+// ══════════════════════════════
+// USER SEARCH (for adding contacts)
+// ══════════════════════════════
+app.get("/api/users/search", authMW, (req, res) => {
+  const q = req.query.q;
+  if (!q || q.length < 2) return res.json([]);
+  const rows = db.prepare("SELECT * FROM users WHERE (username LIKE ? OR phone LIKE ?) AND id != ? LIMIT 10").all(`%${q}%`, `%${q}%`, req.user.id);
+  res.json(rows.map(u => ({ ...safeUser(u), online: userSockets.has(u.id) })));
+});
+
+// Drafts
+app.post("/api/drafts", authMW, (req, res) => {
+  const { chatId, content } = req.body;
+  db.prepare("INSERT OR REPLACE INTO message_drafts (user_id, chat_id, content) VALUES (?, ?, ?)").run(req.user.id, chatId, content || '');
+  res.json({ ok: true });
+});
+app.get("/api/drafts", authMW, (req, res) => {
+  const drafts = db.prepare("SELECT * FROM message_drafts WHERE user_id = ?").all(req.user.id);
+  res.json(drafts);
+});
+
+// Get user info by id
+app.get("/api/users/:id", authMW, (req, res) => {
+  const u = db.prepare("SELECT * FROM users WHERE id = ?").get(req.params.id);
+  if (!u) return res.status(404).json({ error: "Not found" });
+  res.json({ ...safeUser(u), online: userSockets.has(u.id) });
 });
 
 app.get("*", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 
-// ══════════════════════════════════════════
-// SCHEDULED MESSAGES PROCESSOR
-// ══════════════════════════════════════════
-setInterval(() => {
-  const now = Date.now();
-  const pending = db.prepare("SELECT * FROM scheduled_messages WHERE sent = 0 AND scheduled_at <= ?").all(now);
-  for (const sm of pending) {
-    if (sm.to_user_id) {
-      const roomId = getRoomId(sm.from_user_id, sm.to_user_id);
-      const id = uuidv4();
-      db.prepare("INSERT INTO messages (id, room_id, from_user_id, to_user_id, content, type, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)").run(id, roomId, sm.from_user_id, sm.to_user_id, sm.content, sm.type, now);
-      const msg = { id, roomId, fromUserId: sm.from_user_id, toUserId: sm.to_user_id, content: sm.content, type: sm.type, timestamp: now, read: false, deleted: false };
-      io.to(`user_${sm.to_user_id}`).emit("new_message", msg);
-      io.to(`user_${sm.from_user_id}`).emit("scheduled_sent", msg);
-    }
-    db.prepare("UPDATE scheduled_messages SET sent = 1 WHERE id = ?").run(sm.id);
-  }
-}, 10000);
-
-// ══════════════════════════════════════════
-// SOCKET
-// ══════════════════════════════════════════
+// ══════════════════════════════
+// SOCKET.IO
+// ══════════════════════════════
 io.on("connection", (socket) => {
   socket.on("authenticate", (token) => {
     try {
@@ -752,30 +608,25 @@ io.on("connection", (socket) => {
       userSockets.set(decoded.id, socket.id);
       socket.join(`user_${decoded.id}`);
       db.prepare("SELECT group_id FROM group_members WHERE user_id = ?").all(decoded.id).forEach(({ group_id }) => socket.join(`group_${group_id}`));
-      db.prepare("UPDATE users SET is_online = 1, last_seen = ? WHERE id = ?").run(Date.now(), decoded.id);
+      db.prepare("UPDATE users SET is_online = 1 WHERE id = ?").run(decoded.id);
       io.emit("user_online", { userId: decoded.id });
       socket.emit("authenticated", { userId: decoded.id });
     } catch { socket.emit("auth_error"); }
   });
 
-  socket.on("send_message", ({ toUserId, content, type, fileUrl, fileName, fileSize, fileMime, replyTo, forwardedFrom }) => {
+  socket.on("send_message", ({ toUserId, content, type, fileUrl, fileName, fileSize, fileMime, replyTo }) => {
     if (!socket.userId) return;
     if (db.prepare("SELECT 1 FROM blocked WHERE user_id = ? AND blocked_id = ?").get(toUserId, socket.userId)) return;
     const roomId = getRoomId(socket.userId, toUserId);
     const id = uuidv4(), timestamp = Date.now();
-    db.prepare("INSERT INTO messages (id, room_id, from_user_id, to_user_id, content, type, file_url, file_name, file_size, file_mime, reply_to, forwarded_from, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(id, roomId, socket.userId, toUserId, content || "", type || "text", fileUrl || null, fileName || null, fileSize || null, fileMime || null, replyTo || null, forwardedFrom || null, timestamp);
-    const msg = { id, roomId, fromUserId: socket.userId, toUserId, content: content || "", type: type || "text", fileUrl: fileUrl || null, fileName: fileName || null, fileSize: fileSize || null, fileMime: fileMime || null, replyTo: replyTo || null, forwardedFrom: forwardedFrom || null, reactions: {}, timestamp, read: false, deleted: false };
+    db.prepare("INSERT INTO messages (id, room_id, from_user_id, to_user_id, content, type, file_url, file_name, file_size, file_mime, reply_to, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(id, roomId, socket.userId, toUserId, content || "", type || "text", fileUrl || null, fileName || null, fileSize || null, fileMime || null, replyTo || null, timestamp);
+    const msg = { id, roomId, fromUserId: socket.userId, toUserId, content: content || "", type: type || "text", fileUrl: fileUrl || null, fileName: fileName || null, fileSize: fileSize || null, fileMime: fileMime || null, replyTo: replyTo || null, reactions: {}, timestamp, read: false, deleted: false };
     io.to(`user_${toUserId}`).emit("new_message", msg);
     socket.emit("message_sent", msg);
+    // Push notification
     if (!userSockets.has(toUserId)) {
-      const sender = db.prepare("SELECT * FROM users WHERE id = ?").get(socket.userId);
-      const targetUser = db.prepare("SELECT notifications_enabled FROM users WHERE id = ?").get(toUserId);
-      if (targetUser?.notifications_enabled !== 0) {
-        sendPushNotif(toUserId, sender?.username || "New Message",
-          type === "text" ? (content || "") : `Sent a ${type}`,
-          { type: 'message', fromUserId: socket.userId, fromUsername: sender?.username }
-        );
-      }
+      const sender = db.prepare("SELECT username FROM users WHERE id = ?").get(socket.userId);
+      sendPushNotif(toUserId, `📩 ${sender?.username || "New Message"}`, type === "text" ? (content || "") : `Sent a ${type}`, { type: "message", fromUserId: socket.userId });
     }
   });
 
@@ -788,15 +639,53 @@ io.on("connection", (socket) => {
     const msg = { id, groupId, fromUserId: socket.userId, fromUsername: sender?.username, fromAvatarColor: sender?.avatar_color, content: content || "", type: type || "text", fileUrl: fileUrl || null, fileName: fileName || null, fileSize: fileSize || null, fileMime: fileMime || null, replyTo: replyTo || null, reactions: {}, timestamp, deleted: false };
     io.to(`group_${groupId}`).emit("new_group_message", msg);
     // Push to offline members
-    const members = db.prepare("SELECT user_id FROM group_members WHERE group_id = ? AND user_id != ?").all(groupId, socket.userId);
-    const group = db.prepare("SELECT name FROM groups WHERE id = ?").get(groupId);
-    for (const { user_id } of members) {
-      if (!userSockets.has(user_id)) {
-        sendPushNotif(user_id, `${group?.name || 'Group'}: ${sender?.username}`,
-          type === "text" ? (content || "") : `Sent a ${type}`,
-          { type: 'group_message', groupId, fromUserId: socket.userId }
-        );
+    const g = db.prepare("SELECT * FROM groups WHERE id = ?").get(groupId);
+    const members = db.prepare("SELECT user_id FROM group_members WHERE group_id = ?").all(groupId);
+    members.forEach(({ user_id }) => {
+      if (user_id !== socket.userId && !userSockets.has(user_id)) {
+        sendPushNotif(user_id, `📩 ${g?.name || "Group"}: ${sender?.username}`, type === "text" ? (content || "") : `Sent a ${type}`, { type: "group_message", groupId });
       }
+    });
+  });
+
+  socket.on("edit_message", ({ messageId, newContent, toUserId }) => {
+    if (!socket.userId) return;
+    const m = db.prepare("SELECT * FROM messages WHERE id = ? AND from_user_id = ?").get(messageId, socket.userId);
+    if (!m) return;
+    db.prepare("UPDATE messages SET content = ?, edited = 1 WHERE id = ?").run(newContent, messageId);
+    const upd = { messageId, newContent, edited: true };
+    io.to(`user_${toUserId}`).emit("message_edited", upd);
+    socket.emit("message_edited", upd);
+  });
+
+  socket.on("react_message", ({ messageId, emoji, toUserId, isGroup, groupId }) => {
+    if (!socket.userId) return;
+    if (isGroup) {
+      const m = db.prepare("SELECT * FROM group_messages WHERE id = ?").get(messageId);
+      if (!m) return;
+      let reactions = {};
+      try { reactions = JSON.parse(m.reactions || '{}'); } catch(e) {}
+      if (!reactions[emoji]) reactions[emoji] = [];
+      const idx = reactions[emoji].indexOf(socket.userId);
+      if (idx >= 0) reactions[emoji].splice(idx, 1);
+      else reactions[emoji].push(socket.userId);
+      if (!reactions[emoji].length) delete reactions[emoji];
+      db.prepare("UPDATE group_messages SET reactions = ? WHERE id = ?").run(JSON.stringify(reactions), messageId);
+      io.to(`group_${groupId}`).emit("message_reacted", { messageId, reactions, isGroup: true, groupId });
+    } else {
+      const m = db.prepare("SELECT * FROM messages WHERE id = ?").get(messageId);
+      if (!m) return;
+      let reactions = {};
+      try { reactions = JSON.parse(m.reactions || '{}'); } catch(e) {}
+      if (!reactions[emoji]) reactions[emoji] = [];
+      const idx = reactions[emoji].indexOf(socket.userId);
+      if (idx >= 0) reactions[emoji].splice(idx, 1);
+      else reactions[emoji].push(socket.userId);
+      if (!reactions[emoji].length) delete reactions[emoji];
+      db.prepare("UPDATE messages SET reactions = ? WHERE id = ?").run(JSON.stringify(reactions), messageId);
+      const upd = { messageId, reactions };
+      io.to(`user_${toUserId}`).emit("message_reacted", upd);
+      socket.emit("message_reacted", upd);
     }
   });
 
@@ -822,64 +711,65 @@ io.on("connection", (socket) => {
 
   socket.on("delete_group_message", ({ messageId, groupId }) => {
     if (!socket.userId) return;
-    if (db.prepare("SELECT id FROM group_messages WHERE id = ? AND from_user_id = ?").get(messageId, socket.userId)) {
-      db.prepare("UPDATE group_messages SET is_deleted = 1, content = '', file_url = NULL WHERE id = ?").run(messageId);
-    }
-    io.to(`group_${groupId}`).emit("group_message_deleted", { messageId });
+    const m = db.prepare("SELECT * FROM group_messages WHERE id = ? AND from_user_id = ?").get(messageId, socket.userId);
+    if (!m) return;
+    db.prepare("UPDATE group_messages SET is_deleted = 1, content = '', file_url = NULL WHERE id = ?").run(messageId);
+    io.to(`group_${groupId}`).emit("message_deleted", { messageId, groupId, isGroup: true });
   });
 
+  // Calls with push notification for incoming call
   socket.on("call_user", ({ toUserId, offer, callId, callType }) => {
     const caller = db.prepare("SELECT * FROM users WHERE id = ?").get(socket.userId);
     const cId = callId || uuidv4();
-    activeCalls.set(cId, { id: cId, callerId: socket.userId, calleeId: toUserId, status: "ringing", type: callType || "voice", startTime: Date.now() });
-    io.to(`user_${toUserId}`).emit("incoming_call", { callId: cId, fromUserId: socket.userId, fromUsername: caller?.username, fromAvatarColor: caller?.avatar_color, fromAvatarImg: caller?.avatar_img, offer, callType: callType || "voice" });
+    activeCalls.set(cId, { id: cId, callerId: socket.userId, calleeId: toUserId, status: "ringing", type: callType || "voice" });
+    const callData = { callId: cId, fromUserId: socket.userId, fromUsername: caller?.username, fromAvatarColor: caller?.avatar_color, fromAvatarImg: caller?.avatar_img, offer, callType: callType || "voice" };
+    io.to(`user_${toUserId}`).emit("incoming_call", callData);
     socket.emit("call_initiated", { callId: cId });
     // Push notification for call
     if (!userSockets.has(toUserId)) {
-      sendPushNotif(toUserId,
-        caller?.username || 'Incoming Call',
-        callType === 'video' ? 'Incoming video call' : 'Incoming voice call',
-        { type: 'call', callType, fromUserId: socket.userId, fromUsername: caller?.username, callId: cId }
-      );
+      sendPushNotif(toUserId, `📞 ${caller?.username || "Unknown"}`, callType === "video" ? "Incoming video call" : "Incoming voice call", { type: "call", callType, fromUserId: socket.userId });
     }
   });
+
   socket.on("answer_call", ({ callId, toUserId, answer }) => {
     const call = activeCalls.get(callId);
     if (call) call.status = "active";
     io.to(`user_${toUserId}`).emit("call_answered", { callId, answer });
   });
-  socket.on("reject_call", ({ callId, toUserId }) => {
-    const call = activeCalls.get(callId);
-    if (call) {
-      db.prepare("INSERT INTO call_logs (id, caller_id, callee_id, call_type, status, duration, timestamp) VALUES (?, ?, ?, ?, 'missed', 0, ?)").run(uuidv4(), call.callerId, call.calleeId, call.type || 'voice', Date.now());
-    }
-    activeCalls.delete(callId);
-    io.to(`user_${toUserId}`).emit("call_rejected", { callId });
-  });
-  socket.on("end_call", ({ callId, toUserId }) => {
-    const call = activeCalls.get(callId);
-    if (call) {
-      const duration = Math.floor((Date.now() - (call.startTime || Date.now())) / 1000);
-      db.prepare("INSERT INTO call_logs (id, caller_id, callee_id, call_type, status, duration, timestamp) VALUES (?, ?, ?, ?, 'completed', ?, ?)").run(uuidv4(), call.callerId, call.calleeId, call.type || 'voice', duration, Date.now());
-    }
-    activeCalls.delete(callId);
-    io.to(`user_${toUserId}`).emit("call_ended", { callId });
-  });
+  socket.on("reject_call", ({ callId, toUserId }) => { activeCalls.delete(callId); io.to(`user_${toUserId}`).emit("call_rejected", { callId }); });
+  socket.on("end_call", ({ callId, toUserId }) => { activeCalls.delete(callId); io.to(`user_${toUserId}`).emit("call_ended", { callId }); });
   socket.on("ice_candidate", ({ toUserId, candidate, callId }) => { io.to(`user_${toUserId}`).emit("ice_candidate", { candidate, callId, fromUserId: socket.userId }); });
 
-  socket.on("presence", () => {
-    db.prepare("UPDATE users SET last_seen = ?, is_online = 1 WHERE id = ?").run(Date.now(), socket.userId);
+  // Presence
+  socket.on("set_presence", ({ status }) => {
+    if (!socket.userId) return;
+    io.emit("user_presence", { userId: socket.userId, status });
   });
 
   socket.on("disconnect", () => {
     if (socket.userId) {
       userSockets.delete(socket.userId);
-      const now = Date.now();
-      db.prepare("UPDATE users SET is_online = 0, last_seen = ? WHERE id = ?").run(now, socket.userId);
-      io.emit("user_offline", { userId: socket.userId, lastSeen: now });
+      db.prepare("UPDATE users SET is_online = 0, last_seen = ? WHERE id = ?").run(Date.now(), socket.userId);
+      io.emit("user_offline", { userId: socket.userId, lastSeen: Date.now() });
     }
   });
 });
+
+// Scheduled message processor
+setInterval(() => {
+  const now = Date.now();
+  const due = db.prepare("SELECT * FROM scheduled_messages WHERE send_at <= ? AND sent = 0").all(now);
+  due.forEach(sm => {
+    db.prepare("UPDATE scheduled_messages SET sent = 1 WHERE id = ?").run(sm.id);
+    if (sm.to_user_id) {
+      const id = uuidv4();
+      db.prepare("INSERT INTO messages (id, room_id, from_user_id, to_user_id, content, type, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)").run(id, getRoomId(sm.from_user_id, sm.to_user_id), sm.from_user_id, sm.to_user_id, sm.content, sm.type, now);
+      const msg = { id, fromUserId: sm.from_user_id, toUserId: sm.to_user_id, content: sm.content, type: sm.type, timestamp: now, read: false, deleted: false };
+      io.to(`user_${sm.to_user_id}`).emit("new_message", msg);
+      io.to(`user_${sm.from_user_id}`).emit("message_sent", msg);
+    }
+  });
+}, 30000);
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Spark Messenger v5 running on port ${PORT}`));
