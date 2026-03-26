@@ -1,11 +1,9 @@
 {
   "name": "spark-messenger",
-  "version": "4.0.0",
-  "description": "Spark Messenger - Full Featured Chat App",
+  "version": "5.0.0",
+  "description": "Spark Messenger - WhatsApp-like Full Featured Chat App",
   "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
-  },
+  "scripts": { "start": "node server.js" },
   "dependencies": {
     "express": "^4.18.2",
     "socket.io": "^4.7.2",
