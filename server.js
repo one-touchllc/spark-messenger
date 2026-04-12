@@ -1,5 +1,5 @@
 /**
- * Spark Messenger - server.js (Full Featured)
+ * Spark Messenger - server.js (Full Featured with Data Persistence)
  * Run: npm install && node server.js
  */
 
@@ -21,6 +21,7 @@ const JWT_SECRET =
   "spark_jwt_secret_" + crypto.randomBytes(16).toString("hex");
 const UPLOAD_DIR = path.join(__dirname, "uploads");
 const PUBLIC_DIR = path.join(__dirname, "public");
+const DATA_DIR = path.join(__dirname, "data");
 
 let VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || "";
 let VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "";
@@ -37,28 +38,158 @@ webpush.setVapidDetails(
   VAPID_PRIVATE_KEY
 );
 
-[UPLOAD_DIR, PUBLIC_DIR].forEach((dir) => {
+// Create necessary directories
+[UPLOAD_DIR, PUBLIC_DIR, DATA_DIR].forEach((dir) => {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
+// Data persistence functions
+function saveDataToFile(filename, data) {
+  try {
+    const filePath = path.join(DATA_DIR, filename);
+    let dataToSave;
+    
+    if (data instanceof Map) {
+      dataToSave = Array.from(data.entries());
+    } else {
+      dataToSave = data;
+    }
+    
+    fs.writeFileSync(filePath, JSON.stringify(dataToSave, null, 2));
+  } catch (e) {
+    console.error(`Error saving ${filename}:`, e.message);
+  }
+}
+
+function loadDataFromFile(filename, isMap = false) {
+  try {
+    const filePath = path.join(DATA_DIR, filename);
+    if (!fs.existsSync(filePath)) return isMap ? new Map() : null;
+    
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    const parsed = JSON.parse(raw);
+    
+    return isMap ? new Map(parsed) : parsed;
+  } catch (e) {
+    console.error(`Error loading ${filename}:`, e.message);
+    return isMap ? new Map() : null;
+  }
+}
+
+// Initialize DB with persistence
 const DB = {
-  users: new Map(),
-  userByPhone: new Map(),
-  messages: new Map(),
-  groups: new Map(),
-  statuses: new Map(),
-  contacts: new Map(),
-  pinned: new Map(),
-  archived: new Map(),
-  wallpapers: new Map(),
-  starred: new Map(),
-  blocked: new Map(),
-  pushSubs: new Map(),
-  callHistory: new Map(),
-  polls: new Map(),
-  groupCalls: new Map(),
-  locations: new Map(),
+  users: loadDataFromFile('users.json', true) || new Map(),
+  userByPhone: loadDataFromFile('userByPhone.json', true) || new Map(),
+  messages: loadDataFromFile('messages.json', true) || new Map(),
+  groups: loadDataFromFile('groups.json', true) || new Map(),
+  statuses: loadDataFromFile('statuses.json', true) || new Map(),
+  contacts: loadDataFromFile('contacts.json', true) || new Map(),
+  pinned: loadDataFromFile('pinned.json', true) || new Map(),
+  archived: loadDataFromFile('archived.json', true) || new Map(),
+  wallpapers: loadDataFromFile('wallpapers.json', true) || new Map(),
+  starred: loadDataFromFile('starred.json', true) || new Map(),
+  blocked: loadDataFromFile('blocked.json', true) || new Map(),
+  pushSubs: loadDataFromFile('pushSubs.json', true) || new Map(),
+  callHistory: loadDataFromFile('callHistory.json', true) || new Map(),
+  polls: loadDataFromFile('polls.json', true) || new Map(),
+  groupCalls: new Map(), // Group calls are temporary, no need to persist
+  locations: loadDataFromFile('locations.json', true) || new Map(),
 };
+
+// Convert Set data back from arrays
+function convertArrayToSet(mapData) {
+  const result = new Map();
+  for (const [key, value] of mapData) {
+    result.set(key, new Set(value));
+  }
+  return result;
+}
+
+// Load special Map<string, Set> structures
+if (fs.existsSync(path.join(DATA_DIR, 'contacts.json'))) {
+  const contactsData = loadDataFromFile('contacts.json', true);
+  DB.contacts = convertArrayToSet(contactsData);
+}
+if (fs.existsSync(path.join(DATA_DIR, 'pinned.json'))) {
+  const pinnedData = loadDataFromFile('pinned.json', true);
+  DB.pinned = convertArrayToSet(pinnedData);
+}
+if (fs.existsSync(path.join(DATA_DIR, 'archived.json'))) {
+  const archivedData = loadDataFromFile('archived.json', true);
+  DB.archived = convertArrayToSet(archivedData);
+}
+if (fs.existsSync(path.join(DATA_DIR, 'starred.json'))) {
+  const starredData = loadDataFromFile('starred.json', true);
+  DB.starred = convertArrayToSet(starredData);
+}
+if (fs.existsSync(path.join(DATA_DIR, 'blocked.json'))) {
+  const blockedData = loadDataFromFile('blocked.json', true);
+  DB.blocked = convertArrayToSet(blockedData);
+}
+
+// Auto-save function - saves all data periodically
+function saveAllData() {
+  // Save Maps directly
+  saveDataToFile('users.json', DB.users);
+  saveDataToFile('userByPhone.json', DB.userByPhone);
+  saveDataToFile('messages.json', DB.messages);
+  saveDataToFile('groups.json', DB.groups);
+  saveDataToFile('statuses.json', DB.statuses);
+  saveDataToFile('wallpapers.json', DB.wallpapers);
+  saveDataToFile('pushSubs.json', DB.pushSubs);
+  saveDataToFile('callHistory.json', DB.callHistory);
+  saveDataToFile('polls.json', DB.polls);
+  saveDataToFile('locations.json', DB.locations);
+  
+  // Convert Sets to Arrays before saving
+  const contactsArray = new Map();
+  for (const [key, value] of DB.contacts) {
+    contactsArray.set(key, Array.from(value));
+  }
+  saveDataToFile('contacts.json', contactsArray);
+  
+  const pinnedArray = new Map();
+  for (const [key, value] of DB.pinned) {
+    pinnedArray.set(key, Array.from(value));
+  }
+  saveDataToFile('pinned.json', pinnedArray);
+  
+  const archivedArray = new Map();
+  for (const [key, value] of DB.archived) {
+    archivedArray.set(key, Array.from(value));
+  }
+  saveDataToFile('archived.json', archivedArray);
+  
+  const starredArray = new Map();
+  for (const [key, value] of DB.starred) {
+    starredArray.set(key, Array.from(value));
+  }
+  saveDataToFile('starred.json', starredArray);
+  
+  const blockedArray = new Map();
+  for (const [key, value] of DB.blocked) {
+    blockedArray.set(key, Array.from(value));
+  }
+  saveDataToFile('blocked.json', blockedArray);
+  
+  console.log(`💾 Data saved at ${new Date().toLocaleTimeString()}`);
+}
+
+// Auto-save every 30 seconds
+setInterval(saveAllData, 30000);
+
+// Save on process exit
+process.on('SIGINT', () => {
+  console.log('\n💾 Saving data before exit...');
+  saveAllData();
+  console.log('✅ Data saved. Exiting.');
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  saveAllData();
+  process.exit(0);
+});
 
 const getSet = (map, key) => {
   if (!map.has(key)) map.set(key, new Set());
@@ -175,6 +306,7 @@ app.post("/api/register", async (req, res) => {
     };
     DB.users.set(userId, user);
     DB.userByPhone.set(phone, userId);
+    saveAllData(); // Save after registration
     const token = jwt.sign({ userId }, JWT_SECRET, { expiresIn: "30d" });
     const { passwordHash: _, ...safeUser } = user;
     res.json({ user: safeUser, token });
@@ -193,6 +325,7 @@ app.put("/api/profile", authMiddleware, (req, res) => {
   if (about !== undefined) user.about = about;
   if (avatar_img) user.avatarImg = avatar_img;
   DB.users.set(req.userId, user);
+  saveAllData(); // Save after profile update
   const { passwordHash, ...safeUser } = user;
   broadcastToContacts(req.userId, "profile_updated", safeUser);
   res.json(safeUser);
@@ -227,6 +360,7 @@ app.post("/api/contacts/add", authMiddleware, (req, res) => {
   if (targetId === req.userId)
     return res.status(400).json({ error: "Cannot add yourself" });
   getSet(DB.contacts, req.userId).add(targetId);
+  saveAllData(); // Save after adding contact
   const target = DB.users.get(targetId);
   const { passwordHash, ...safe } = target;
   const tSocket = userSocketMap.get(targetId);
@@ -240,6 +374,7 @@ app.post("/api/contacts/add", authMiddleware, (req, res) => {
 
 app.delete("/api/contacts/:id", authMiddleware, (req, res) => {
   getSet(DB.contacts, req.userId).delete(req.params.id);
+  saveAllData(); // Save after deleting contact
   res.json({ ok: true });
 });
 
@@ -270,6 +405,7 @@ app.post("/api/messages/:id/react", authMiddleware, (req, res) => {
   );
   if (existing >= 0) msg.reactions.splice(existing, 1);
   else msg.reactions.push({ userId: req.userId, emoji });
+  saveAllData(); // Save after reaction
   const otherUserId =
     msg.fromUserId === req.userId ? msg.toUserId : msg.fromUserId;
   const s = userSocketMap.get(otherUserId);
@@ -291,6 +427,7 @@ app.post("/api/messages/:id/star", authMiddleware, (req, res) => {
   const starred = getSet(DB.starred, req.userId);
   if (starred.has(req.params.id)) starred.delete(req.params.id);
   else starred.add(req.params.id);
+  saveAllData(); // Save after starring
   res.json({ ok: true });
 });
 
@@ -312,6 +449,7 @@ app.put("/api/messages/:id/edit", authMiddleware, (req, res) => {
     return res.status(403).json({ error: "Forbidden" });
   msg.content = content;
   msg.edited = true;
+  saveAllData(); // Save after editing
   emitToUser(msg.toUserId, "message_edited", { messageId: msg.id, content });
   res.json({ ok: true });
 });
@@ -344,6 +482,7 @@ app.post("/api/groups", authMiddleware, (req, res) => {
     createdAt: Date.now(),
   };
   DB.groups.set(groupId, group);
+  saveAllData(); // Save after creating group
   members.forEach((uid) => {
     if (uid !== req.userId) emitToUser(uid, "added_to_group", group);
   });
@@ -361,6 +500,7 @@ app.put("/api/groups/:id", authMiddleware, (req, res) => {
   if (avatarImg !== undefined) g.avatarImg = avatarImg;
   if (canMembersSendMessages !== undefined)
     g.canMembersSendMessages = canMembersSendMessages;
+  saveAllData(); // Save after updating group
   g.members.forEach((uid) => emitToUser(uid, "group_updated", g));
   res.json(g);
 });
@@ -372,6 +512,7 @@ app.post("/api/groups/:id/add-admin", authMiddleware, (req, res) => {
     return res.status(403).json({ error: "Admins only" });
   const { userId } = req.body;
   if (!g.admins.includes(userId)) g.admins.push(userId);
+  saveAllData(); // Save after adding admin
   g.members.forEach((uid) => emitToUser(uid, "group_updated", g));
   res.json(g);
 });
@@ -384,6 +525,7 @@ app.post("/api/groups/:id/remove-member", authMiddleware, (req, res) => {
   const { userId } = req.body;
   g.members = g.members.filter((m) => m !== userId);
   g.admins = g.admins.filter((a) => a !== userId);
+  saveAllData(); // Save after removing member
   emitToUser(userId, "removed_from_group", { groupId: g.id });
   g.members.forEach((uid) => emitToUser(uid, "group_updated", g));
   res.json(g);
@@ -425,6 +567,7 @@ app.post("/api/groups/:id/leave", authMiddleware, (req, res) => {
   if (!g) return res.status(404).json({ error: "Not found" });
   g.members = g.members.filter((m) => m !== req.userId);
   g.admins = g.admins.filter((a) => a !== req.userId);
+  saveAllData(); // Save after leaving group
   g.members.forEach((uid) => emitToUser(uid, "group_updated", g));
   res.json({ ok: true });
 });
@@ -461,6 +604,7 @@ app.post("/api/polls", authMiddleware, (req, res) => {
     createdAt: Date.now(),
   };
   DB.polls.set(pollId, poll);
+  saveAllData(); // Save after creating poll
   res.json(poll);
 });
 
@@ -476,6 +620,7 @@ app.post("/api/polls/:id/vote", authMiddleware, (req, res) => {
     const opt = poll.options.find((o) => o.id === oid);
     if (opt && !opt.voters.includes(req.userId)) opt.voters.push(req.userId);
   });
+  saveAllData(); // Save after voting
   res.json(poll);
 });
 
@@ -504,6 +649,7 @@ app.post("/api/status", authMiddleware, (req, res) => {
     req.userId,
     arr.filter((s) => s.timestamp > cutoff)
   );
+  saveAllData(); // Save after posting status
   broadcastToContacts(req.userId, "new_status", { userId: req.userId });
   res.json({ ok: true });
 });
@@ -537,6 +683,7 @@ function addCallHistory(userId, record) {
   const arr = getArr(DB.callHistory, userId);
   arr.push(record);
   if (arr.length > 200) arr.splice(0, arr.length - 200);
+  saveAllData(); // Save after adding call history
 }
 
 // META
@@ -548,18 +695,22 @@ app.get("/api/meta", authMiddleware, (req, res) => {
 });
 app.post("/api/pin/:chatId", authMiddleware, (req, res) => {
   getSet(DB.pinned, req.userId).add(req.params.chatId);
+  saveAllData(); // Save after pinning
   res.json({ ok: true });
 });
 app.post("/api/unpin/:chatId", authMiddleware, (req, res) => {
   getSet(DB.pinned, req.userId).delete(req.params.chatId);
+  saveAllData(); // Save after unpinning
   res.json({ ok: true });
 });
 app.post("/api/archive/:chatId", authMiddleware, (req, res) => {
   getSet(DB.archived, req.userId).add(req.params.chatId);
+  saveAllData(); // Save after archiving
   res.json({ ok: true });
 });
 app.post("/api/unarchive/:chatId", authMiddleware, (req, res) => {
   getSet(DB.archived, req.userId).delete(req.params.chatId);
+  saveAllData(); // Save after unarchiving
   res.json({ ok: true });
 });
 app.get("/api/wallpapers", authMiddleware, (req, res) => {
@@ -568,10 +719,12 @@ app.get("/api/wallpapers", authMiddleware, (req, res) => {
 app.put("/api/wallpaper/:chatId", authMiddleware, (req, res) => {
   const wp = getMap(DB.wallpapers, req.userId);
   wp[req.params.chatId] = req.body.wallpaper || "";
+  saveAllData(); // Save after setting wallpaper
   res.json({ ok: true });
 });
 app.post("/api/block/:userId", authMiddleware, (req, res) => {
   getSet(DB.blocked, req.userId).add(req.params.userId);
+  saveAllData(); // Save after blocking
   res.json({ ok: true });
 });
 
@@ -610,6 +763,7 @@ app.get("/api/vapid-public-key", (req, res) => {
 });
 app.post("/api/push-subscribe", authMiddleware, (req, res) => {
   DB.pushSubs.set(req.userId, req.body.subscription);
+  saveAllData(); // Save after push subscription
   res.json({ ok: true });
 });
 
@@ -670,6 +824,7 @@ io.on("connection", (socket) => {
     };
     DB.messages.set(msg.id, msg);
     if (pollId) DB.polls.set(pollId, data.pollData || DB.polls.get(pollId));
+    saveAllData(); // Save after sending message
     const recipientSocket = userSocketMap.get(toUserId);
     if (recipientSocket) {
       io.to(recipientSocket).emit("new_message", msg);
@@ -722,6 +877,7 @@ io.on("connection", (socket) => {
       location: location || null,
     };
     DB.messages.set(msg.id, msg);
+    saveAllData(); // Save after sending group message
     group.members.forEach((uid) => {
       if (uid === socket.userId) return;
       emitToUser(uid, "new_group_message", msg);
@@ -743,6 +899,7 @@ io.on("connection", (socket) => {
       )
         m.read = true;
     }
+    saveAllData(); // Save after marking as read
     emitToUser(fromUserId, "messages_read", { byUserId: socket.userId });
   });
 
@@ -753,6 +910,7 @@ io.on("connection", (socket) => {
     msg.deleted = true;
     msg.content = "";
     msg.fileUrl = null;
+    saveAllData(); // Save after deleting message
     emitToUser(toUserId, "message_deleted", { messageId });
   });
 
@@ -1076,5 +1234,7 @@ if (!fs.existsSync(swPath)) {
 server.listen(PORT, () => {
   console.log(`\n🚀 Spark Messenger running at http://localhost:${PORT}`);
   console.log(`📁 Public: ${PUBLIC_DIR}`);
-  console.log(`📎 Uploads: ${UPLOAD_DIR}\n`);
+  console.log(`📎 Uploads: ${UPLOAD_DIR}`);
+  console.log(`💾 Data: ${DATA_DIR}`);
+  console.log(`⏰ Auto-save every 30 seconds\n`);
 });
