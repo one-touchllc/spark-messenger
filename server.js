@@ -2,7 +2,13 @@
  * Spark Messenger - server.js (Full Featured with Data Persistence)
  * Run: npm install && node server.js
  */
-
+app.use((req, res, next) => {
+    // Ye line browser ko batati hai ki 'unaux.com' ko allow karna hai
+    res.setHeader("Content-Security-Policy", "frame-ancestors 'self' https://sparkmessenger.unaux.com");
+    // Purane browsers ke liye X-Frame-Options hatana zaroori hai
+    res.removeHeader("X-Frame-Options");
+    next();
+});
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
