@@ -2,7 +2,6 @@
  * Spark Messenger - server.js (Full Featured with Data Persistence)
  * Run: npm install && node server.js
  */
-const express = require('express'); // 1. Sabse pehle express lao
 const app = express();            // 2. Ab 'app' initialize karo
 
 // 3. AB YE WALA CODE LIKHO (Initialization ke BAAD)
