@@ -2,12 +2,24 @@
  * Spark Messenger - server.js (Full Featured with Data Persistence)
  * Run: npm install && node server.js
  */
+const express = require('express'); // 1. Sabse pehle express lao
+const app = express();            // 2. Ab 'app' initialize karo
+
+// 3. AB YE WALA CODE LIKHO (Initialization ke BAAD)
 app.use((req, res, next) => {
-    // Ye line browser ko batati hai ki 'unaux.com' ko allow karna hai
     res.setHeader("Content-Security-Policy", "frame-ancestors 'self' https://sparkmessenger.unaux.com");
-    // Purane browsers ke liye X-Frame-Options hatana zaroori hai
     res.removeHeader("X-Frame-Options");
     next();
+});
+
+// Baki ka code (Routes, Listen, etc.) iske niche aayega
+app.get('/', (req, res) => {
+    res.send('Server is running!');
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Server started on port ${PORT}`);
 });
 const express = require("express");
 const http = require("http");
